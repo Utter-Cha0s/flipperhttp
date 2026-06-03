@@ -20,6 +20,7 @@
 // #define BOARD_ESP32_C5 11    // ESP32C5 Dev Module            esp32 by Espressif Systems
 // #define BOARD_PICOCALC_W 12  // Raspberry Pi Pico W           Raspberry Pi Pico/RP2040/RP2350 by Earl Philhower
 // #define BOARD_PICOCALC_2W 13 // Raspberry Pi Pico 2W          Raspberry Pi Pico/RP2040/RP2350 by Earl Philhower
+// #define BOARD_CARDPUTER 14   // ESP32S3 Dev Module            esp32 by Espressif Systems
 
 /*
 - ESP32: https://dl.espressif.com/dl/package_esp32_index.json
