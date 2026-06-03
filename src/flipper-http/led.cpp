@@ -9,7 +9,7 @@ constexpr uint8_t LED_PIN = 8;
 #elif defined(BOARD_ESP32_C5)
 constexpr uint8_t LED_PIN = 27;
 #elif defined(BOARD_CARDPUTER)
-constexpr uint8_t LED_PIN = 38;
+constexpr uint8_t LED_PIN = 21;
 #endif
 constexpr uint8_t NUM_LEDS = 1;
 
