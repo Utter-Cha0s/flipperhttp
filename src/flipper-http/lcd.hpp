@@ -4,6 +4,8 @@
 #if defined(BOARD_PICOCALC_W) || defined(BOARD_PICOCALC_2W)
 #include <TFT_eSPI.h>
 #include <Arduino.h>
+#elif defined(BOARD_CARDPUTER)
+#include "cardputer/lcd.h"
 #endif
 
 class LCD

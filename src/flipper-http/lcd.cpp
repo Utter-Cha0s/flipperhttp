@@ -28,6 +28,8 @@ LCD::LCD()
         this->canvasTFT->setTextColor(TFT_WHITE);
         this->canvasTFT->fillSprite(TFT_BLACK);
     }
+#elif defined(BOARD_CARDPUTER)
+    lcd_init();
 #endif
 }
 
@@ -43,6 +45,8 @@ LCD::~LCD()
     {
         delete this->displayTFT;
     }
+#elif defined(BOARD_CARDPUTER)
+    lcd_deinit();
 #endif
 }
 
@@ -53,6 +57,8 @@ void LCD::clear(uint16_t color)
     {
         this->canvasTFT->fillRect(0, 0, 320, 320, color);
     }
+#elif defined(BOARD_CARDPUTER)
+    lcd_fill(color);
 #endif
 }
 
@@ -64,6 +70,8 @@ void LCD::print(uint16_t x, uint16_t y, const char *text)
         this->canvasTFT->setCursor(x, y);
         this->canvasTFT->print(text);
     }
+#elif defined(BOARD_CARDPUTER)
+    lcd_draw_text(x, y, text, TFT_WHITE, FONT_DEFAULT);
 #endif
 }
 
@@ -74,6 +82,8 @@ void LCD::swap()
     {
         this->canvasTFT->pushSprite(0, 0);
     }
+#elif defined(BOARD_CARDPUTER)
+    lcd_swap();
 #endif
 }
 
@@ -86,5 +96,9 @@ void LCD::text(uint16_t x, uint16_t y, const char *text)
         this->print(x, y, text);
         this->swap();
     }
+#elif defined(BOARD_CARDPUTER)
+    this->clear(TFT_BLACK);
+    this->print(x, y, text);
+    this->swap();
 #endif
 }
