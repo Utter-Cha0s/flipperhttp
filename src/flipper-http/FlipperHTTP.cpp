@@ -3,7 +3,7 @@ Author: JBlanked
 Github: https://github.com/jblanked/FlipperHTTP
 Info: This library is a wrapper around the HTTPClient library and is used to communicate with the FlipperZero over serial.
 Created: 2024-09-30
-Updated: 2026-05-21
+Updated: 2026-06-04
 */
 
 #include "FlipperHTTP.hpp"
@@ -12,106 +12,71 @@ Updated: 2026-05-21
 #include "common.hpp"
 #include "command.hpp"
 
-#define MAX_CHUNK_SIZE 128
-
 // Load WiFi settings
 bool FlipperHTTP::loadWiFi()
 {
-    JsonDocument doc;
-    if (!storage.deserialize(doc, settingsFilePath))
+    if (!storage.read(settingsFilePath, this->state))
     {
+        this->uart->println(F("[ERROR] No settings saved yet or failed to read settings."));
         return false;
     }
 
-    if (!doc["wifi_list"] || !doc["wifi_list"].is<JsonArray>())
+    if (this->state.networkCount == 0)
     {
-        this->uart->println(F("[ERROR] JSON missing 'wifi_list' or it's not an array."));
+        this->uart->println(F("[ERROR] No WiFi networks saved."));
         return false;
     }
 
-    JsonArray wifiList = doc["wifi_list"].as<JsonArray>();
-
-    for (JsonObject wifi : wifiList)
+    // Try to connect to saved index first
+    if (this->wifi.connect(this->state.networks[this->state.networkCurrent].ssid, this->state.networks[this->state.networkCurrent].pass))
     {
-        // Skip if no SSID or password
-        if (!wifi["ssid"] || !wifi["password"])
-            continue;
+        char message[128];
+        snprintf(message, sizeof(message), "WiFi connected to %s", this->state.networks[this->state.networkCurrent].ssid);
+        this->uart->println(message);
+        return true;
+    }
 
-        const char *ssid = wifi["ssid"];
-        const char *password = wifi["password"];
-
-        strncpy(loaded_ssid, ssid, sizeof(loaded_ssid));
-        strncpy(loaded_pass, password, sizeof(loaded_pass));
-
-        // Try to connect
-        if (this->wifi.connect(loaded_ssid, loaded_pass))
+    // Try others
+    for (uint8_t i = 0; i < this->state.networkCount; i++)
+    {
+        if (this->wifi.connect(this->state.networks[i].ssid, this->state.networks[i].pass))
         {
+            this->state.networkCurrent = i;
+            char message[128];
+            snprintf(message, sizeof(message), "WiFi connected to %s", this->state.networks[this->state.networkCurrent].ssid);
+            this->uart->println(message);
             return true;
         }
     }
 
-    this->uart->println(F("[ERROR] No networks connected."));
+    this->uart->println(F("[ERROR] Failed to connect to any WiFi network."));
     return false;
 }
 
 // Save WiFi settings to storage
-bool FlipperHTTP::saveWiFi(const String jsonData)
+bool FlipperHTTP::saveWiFi(const char *newSSID, const char *newPassword)
 {
-    JsonDocument newEntryDoc;
-    auto err = deserializeJson(newEntryDoc, jsonData);
-    if (err)
-    {
-        this->uart->println(F("[ERROR] Failed to parse JSON data."));
-        return false;
-    }
-
-    if (!newEntryDoc["ssid"] || !newEntryDoc["password"])
-    {
-        this->uart->println(F("[ERROR] JSON must contain 'ssid' and 'password'."));
-        return false;
-    }
-
-    const char *newSSID = newEntryDoc["ssid"];
-    const char *newPassword = newEntryDoc["password"];
-
-    JsonDocument settingsDoc;
-    bool hadSettings = storage.deserialize(settingsDoc, settingsFilePath);
-
-    JsonArray wifiList;
-    if (hadSettings && settingsDoc["wifi_list"] && settingsDoc["wifi_list"].is<JsonArray>())
-    {
-        // Use the existing array
-        wifiList = settingsDoc["wifi_list"].as<JsonArray>();
-    }
-    else
-    {
-        // No valid settings on disk yet → clear and create a new array
-        settingsDoc.clear();
-        wifiList = settingsDoc["wifi_list"].to<JsonArray>();
-    }
-
     // check for duplicates
-    for (JsonObject net : wifiList)
+    for (uint8_t i = 0; i < this->state.networkCount; i++)
     {
-        if (net["ssid"] == newSSID)
+        if (strcmp(this->state.networks[i].ssid, newSSID) == 0)
         {
+            this->state.networkCurrent = i; // Set current network index to the existing one
             return true;
         }
     }
 
-    // append the new network
-    JsonObject added = wifiList.add<JsonObject>();
-    added["ssid"] = newSSID;
-    added["password"] = newPassword;
+    snprintf(this->state.networks[this->state.networkCount].ssid, sizeof(this->state.networks[this->state.networkCount].ssid), "%s", newSSID);
+    snprintf(this->state.networks[this->state.networkCount].pass, sizeof(this->state.networks[this->state.networkCount].pass), "%s", newPassword);
+    this->state.networkCurrent = this->state.networkCount; // Set current network index to the new one
+    this->state.networkCount++;                            // Increment network count
 
-    // persist back to flash
-    if (!storage.serialize(settingsDoc, settingsFilePath))
+    if (!storage.write(settingsFilePath, state))
     {
         this->uart->println(F("[ERROR] Failed to write settings to storage."));
         return false;
     }
 
-    this->uart->println(F("[SUCCESS] Settings saved."));
     return true;
 }
 
@@ -130,8 +95,6 @@ void FlipperHTTP::setup()
     this->uart_2->setTimeout(5000);
     this->uart_2->flush();
 #endif
-    this->use_led = true;
-    this->led.start();
     if (!storage.begin())
     {
         this->uart->println(F("[ERROR] Storage initialization failed."));
@@ -139,13 +102,12 @@ void FlipperHTTP::setup()
     else
     {
         this->loadWiFi(); // Load WiFi settings
-        String ledState = storage.read(ledStateFilePath);
-        this->use_led = (ledState == "off") ? false : true;
     }
-    this->uart->flush();
-    this->led.off();
     this->http = new HTTP(this->uart, &this->client);
     this->websocket = nullptr;
+    this->led.start();
+    this->uart->flush();
+    this->led.off();
 }
 
 // Main loop for flipper-http.ino that handles all of the commands
@@ -155,7 +117,7 @@ void FlipperHTTP::loop()
     // Check if there's incoming serial data
     if (this->uart->available() > 0)
     {
-        if (this->use_led)
+        if (this->state.ledState)
         {
             this->led.on();
         }
@@ -172,14 +134,14 @@ void FlipperHTTP::loop()
         // Send response back to Flipper
         this->uart->println(_response);
 
-        if (this->use_led)
+        if (this->state.ledState)
         {
             this->led.off();
         }
     }
     else if (this->uart_2->available() > 0)
     {
-        if (this->use_led)
+        if (this->state.ledState)
         {
             this->led.on();
         }
@@ -190,7 +152,7 @@ void FlipperHTTP::loop()
         // send to Flipper
         this->uart->println(_data);
 
-        if (this->use_led)
+        if (this->state.ledState)
         {
             this->led.off();
         }
@@ -207,7 +169,7 @@ void FlipperHTTP::loop()
             return;
         }
 
-        if (this->use_led)
+        if (this->state.ledState)
         {
             this->led.on();
         }
@@ -226,7 +188,7 @@ void FlipperHTTP::loop()
             break;
         case COMMAND_TYPE_WIFI_IP:
         {
-            if (!this->wifi.isConnected() && !this->wifi.connect(loaded_ssid, loaded_pass))
+            if (!this->wifi.isConnected() && !this->wifi.connect(this->state.networks[this->state.networkCurrent].ssid, this->state.networks[this->state.networkCurrent].pass))
             {
                 this->uart->println(F("[ERROR] Not connected to Wifi. Failed to reconnect."));
                 this->led.off();
@@ -286,21 +248,9 @@ void FlipperHTTP::loop()
             }
 
             // Extract values from JSON
-            if (doc["ssid"] && doc["password"])
-            {
-                strncpy(loaded_ssid, doc["ssid"], sizeof(loaded_ssid));     // save ssid
-                strncpy(loaded_pass, doc["password"], sizeof(loaded_pass)); // save password
-            }
-            else
+            if (!doc["ssid"] && doc["password"])
             {
                 this->uart->println(F("[ERROR] JSON does not contain ssid and password."));
-                return;
-            }
-
-            // Save to storage
-            if (!this->saveWiFi(jsonData))
-            {
-                this->uart->println(F("[ERROR] Failed to save settings to file."));
                 return;
             }
 
@@ -310,18 +260,24 @@ void FlipperHTTP::loop()
             }
 
             // Attempt to reconnect with new settings
-            if (this->wifi.connect(loaded_ssid, loaded_pass))
+            if (this->wifi.connect(doc["ssid"], doc["password"]))
             {
-                this->uart->println(F("[SUCCESS] WiFi settings saved and connected."));
+                // Save to storage
+                if (!this->saveWiFi(doc["ssid"], doc["password"]))
+                {
+                    this->uart->println(F("[ERROR] Connected to WiFi but failed to save settings to file."));
+                }
+                else
+                {
+                    this->uart->println(F("[SUCCESS] WiFi settings saved and WiFi connected successfully."));
+                }
                 return;
             }
             else
             {
-                this->uart->println(F("[ERROR] WiFi settings saved but failed to connect."));
+                this->uart->println(F("[ERROR] Failed to connect to WiFi."));
                 return;
             }
-
-            this->uart->println(F("[SUCCESS] WiFi settings saved."));
             break;
         }
         case COMMAND_TYPE_WIFI_CONNECT:
@@ -330,7 +286,7 @@ void FlipperHTTP::loop()
             if (!this->wifi.isConnected())
             {
                 // Attempt to connect to Wifi
-                if (this->wifi.connect(loaded_ssid, loaded_pass))
+                if (this->wifi.connect(this->state.networks[this->state.networkCurrent].ssid, this->state.networks[this->state.networkCurrent].pass))
                 {
                     this->uart->println(F("[SUCCESS] Connected to Wifi."));
                 }
@@ -360,7 +316,7 @@ void FlipperHTTP::loop()
         }
         case COMMAND_TYPE_GET:
         {
-            if (!this->wifi.isConnected() && !this->wifi.connect(loaded_ssid, loaded_pass))
+            if (!this->wifi.isConnected() && !this->wifi.connect(this->state.networks[this->state.networkCurrent].ssid, this->state.networks[this->state.networkCurrent].pass))
             {
                 this->uart->println(F("[ERROR] Not connected to WiFi. Failed to reconnect."));
                 this->led.off();
@@ -387,7 +343,7 @@ void FlipperHTTP::loop()
         }
         case COMMAND_TYPE_GET_HTTP:
         {
-            if (!this->wifi.isConnected() && !this->wifi.connect(loaded_ssid, loaded_pass))
+            if (!this->wifi.isConnected() && !this->wifi.connect(this->state.networks[this->state.networkCurrent].ssid, this->state.networks[this->state.networkCurrent].pass))
             {
                 this->uart->println(F("[ERROR] Not connected to Wifi. Failed to reconnect."));
                 this->led.off();
@@ -450,7 +406,7 @@ void FlipperHTTP::loop()
         }
         case COMMAND_TYPE_POST_HTTP:
         {
-            if (!this->wifi.isConnected() && !this->wifi.connect(loaded_ssid, loaded_pass))
+            if (!this->wifi.isConnected() && !this->wifi.connect(this->state.networks[this->state.networkCurrent].ssid, this->state.networks[this->state.networkCurrent].pass))
             {
                 this->uart->println(F("[ERROR] Not connected to Wifi. Failed to reconnect."));
                 this->led.off();
@@ -514,7 +470,7 @@ void FlipperHTTP::loop()
         }
         case COMMAND_TYPE_PUT_HTTP:
         {
-            if (!this->wifi.isConnected() && !this->wifi.connect(loaded_ssid, loaded_pass))
+            if (!this->wifi.isConnected() && !this->wifi.connect(this->state.networks[this->state.networkCurrent].ssid, this->state.networks[this->state.networkCurrent].pass))
             {
                 this->uart->println(F("[ERROR] Not connected to Wifi. Failed to reconnect."));
                 this->led.off();
@@ -578,7 +534,7 @@ void FlipperHTTP::loop()
         }
         case COMMAND_TYPE_PATCH_HTTP:
         {
-            if (!this->wifi.isConnected() && !this->wifi.connect(loaded_ssid, loaded_pass))
+            if (!this->wifi.isConnected() && !this->wifi.connect(this->state.networks[this->state.networkCurrent].ssid, this->state.networks[this->state.networkCurrent].pass))
             {
                 this->uart->println(F("[ERROR] Not connected to Wifi. Failed to reconnect."));
                 this->led.off();
@@ -638,7 +594,7 @@ void FlipperHTTP::loop()
         }
         case COMMAND_TYPE_DELETE_HTTP:
         {
-            if (!this->wifi.isConnected() && !this->wifi.connect(loaded_ssid, loaded_pass))
+            if (!this->wifi.isConnected() && !this->wifi.connect(this->state.networks[this->state.networkCurrent].ssid, this->state.networks[this->state.networkCurrent].pass))
             {
                 this->uart->println(F("[ERROR] Not connected to Wifi. Failed to reconnect."));
                 this->led.off();
@@ -702,7 +658,7 @@ void FlipperHTTP::loop()
         }
         case COMMAND_TYPE_GET_BYTES:
         {
-            if (!this->wifi.isConnected() && !this->wifi.connect(loaded_ssid, loaded_pass))
+            if (!this->wifi.isConnected() && !this->wifi.connect(this->state.networks[this->state.networkCurrent].ssid, this->state.networks[this->state.networkCurrent].pass))
             {
                 this->uart->println(F("[ERROR] Not connected to Wifi. Failed to reconnect."));
                 this->led.off();
@@ -757,7 +713,7 @@ void FlipperHTTP::loop()
         }
         case COMMAND_TYPE_POST_BYTES:
         {
-            if (!this->wifi.isConnected() && !this->wifi.connect(loaded_ssid, loaded_pass))
+            if (!this->wifi.isConnected() && !this->wifi.connect(this->state.networks[this->state.networkCurrent].ssid, this->state.networks[this->state.networkCurrent].pass))
             {
                 this->uart->println(F("[ERROR] Not connected to Wifi. Failed to reconnect."));
                 this->led.off();
@@ -813,7 +769,7 @@ void FlipperHTTP::loop()
         }
         case COMMAND_TYPE_POST_FILE:
         {
-            if (!this->wifi.isConnected() && !this->wifi.connect(loaded_ssid, loaded_pass))
+            if (!this->wifi.isConnected() && !this->wifi.connect(this->state.networks[this->state.networkCurrent].ssid, this->state.networks[this->state.networkCurrent].pass))
             {
                 this->uart->println(F("[ERROR] Not connected to Wifi. Failed to reconnect."));
                 this->led.off();
@@ -942,25 +898,25 @@ void FlipperHTTP::loop()
             break;
         }
         case COMMAND_TYPE_LED_ON:
-            this->use_led = true;
-            if (storage.write(ledStateFilePath, "on"))
+            this->state.ledState = true;
+            if (storage.write(settingsFilePath, state))
             {
                 this->uart->println(F("[SUCCESS] LED enabled and state saved."));
             }
             else
             {
-                this->uart->println(F("[ERROR] Failed to save LED state."));
+                this->uart->println(F("[ERROR] LED enabled but failed to save state."));
             }
             break;
         case COMMAND_TYPE_LED_OFF:
-            this->use_led = false;
-            if (storage.write(ledStateFilePath, "off"))
+            this->state.ledState = false;
+            if (storage.write(settingsFilePath, state))
             {
                 this->uart->println(F("[SUCCESS] LED disabled and state saved."));
             }
             else
             {
-                this->uart->println(F("[ERROR] Failed to save LED state."));
+                this->uart->println(F("[ERROR] LED disabled but failed to save state."));
             }
             break;
         case COMMAND_TYPE_IP_ADDRESS:
@@ -1240,7 +1196,7 @@ void FlipperHTTP::loop()
             break;
         }
 
-        if (this->use_led)
+        if (this->state.ledState)
         {
             this->led.off();
         }
