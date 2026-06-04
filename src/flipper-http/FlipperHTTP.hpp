@@ -90,6 +90,7 @@ Change Log:
     - Replaced JSON settings with a struct
     - Updated storage to read and write the struct instead of JSON
     - Updated `setup` to do the LED sequence after initializing drivers, loading settings, and attempting to connect to WiFi
+    - Updated arduino-pico package to 5.6.0
     - Bumped version to 2.2.0
 */
 #pragma once
