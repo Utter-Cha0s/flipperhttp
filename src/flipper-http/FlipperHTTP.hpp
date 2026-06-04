@@ -111,14 +111,12 @@ public:
     {
     }
 
-    bool loadWiFi();            // Load Wifi settings from storage
-    bool saveWiFi(String data); // Save and Load settings to and from storage
-    void setup();               // Arduino setup function
-    void loop();                // Main loop for flipper-http.ino that handles all of the commands
+    bool loadWiFi();                                             // Load Wifi settings from storage
+    bool saveWiFi(const char *newSSID, const char *newPassword); // Save and Load settings to and from storage
+    void setup();                                                // Arduino setup function
+    void loop();                                                 // Main loop for flipper-http.ino that handles all of the commands
 private:
-    char loaded_ssid[64] = {0}; // Variable to store SSID
-    char loaded_pass[64] = {0}; // Variable to store password
-    bool use_led = true;        // Variable to control LED usage
+    state_t state; // device state struct to hold wifi settings and LED state
 #ifndef BOARD_BW16
     WiFiClientSecure client; // WiFiClientSecure object for secure connections
 #else
@@ -138,5 +136,4 @@ private:
     WebSocket *websocket;   // WebSocket object to handle WebSocket connections
 };
 
-const PROGMEM char settingsFilePath[] = "/flipper-http.json"; // Path to the settings file in the SPIFFS file system
-const PROGMEM char ledStateFilePath[] = "/led.txt";           // Path to the LED state file in the SPIFFS file system
+const PROGMEM char settingsFilePath[] = "/settings.fhttp"; // Path to the settings file in the SPIFFS file system
