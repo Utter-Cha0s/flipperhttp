@@ -7,7 +7,7 @@
 6. Wait until the flashing process is complete, then disconnect your Cardputer from your computer and turn it on. M5Launcher should now be installed and ready to use!
 7. Download the `flipper_http_merged_cardputer.bin` file from the `Cardputer-ADV` directory of this repository and copy it to the root of your SD card.
 8. With your Cardputer off, insert the SD card into your Cardputer, then turn on your device.
-9. Once the app is open, click `SD` then scroll down and select the `flipper_http_merged_cardputer.bin` file, then click `Install` and ensure SPIFFS is enabled. 
+9. Once the app is open, click `SD` then scroll down and select the `flipper_http_merged_cardputer.bin` file, then click `Install`, and lastly scroll down and click `SPIFFS Yes`.
 10. Wait until the installation process is complete and your Cardputer will reboot into FlipperHTTP!
 
 For wiring information, click [here](https://github.com/jblanked/FlipperHTTP?tab=readme-ov-file#wiring).
