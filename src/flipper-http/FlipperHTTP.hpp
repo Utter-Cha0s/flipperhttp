@@ -3,7 +3,7 @@ Author: JBlanked
 Github: https://github.com/jblanked/FlipperHTTP
 Info: This library is a wrapper around the HTTPClient library and is used to communicate with the FlipperZero over serial.
 Created: 2024-09-30
-Updated: 2026-05-21
+Updated: 2026-06-04
 
 Change Log:
 - 2024-09-30: Initial commit
@@ -85,7 +85,12 @@ Change Log:
 - 2026-05-21:
     - Added [PATCH/HTTP] command to send PATCH requests (@nozzle-1)
     - Bumped version to 2.1.8
-
+- 2026-06-04:
+    - Added support for the Cardputer-ADV
+    - Replaced JSON settings with a struct
+    - Updated storage to read and write the struct instead of JSON
+    - Updated `setup` to do the LED sequence after initializing drivers, loading settings, and attempting to connect to WiFi
+    - Bumped version to 2.2.0
 */
 #pragma once
 #include "certs.hpp"
@@ -101,7 +106,7 @@ Change Log:
 #include <string.h>
 
 #define BAUD_RATE 115200
-#define FLIPPER_HTTP_VERSION "2.1.8"
+#define FLIPPER_HTTP_VERSION "2.2.0"
 
 class FlipperHTTP
 {
